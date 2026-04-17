@@ -13,9 +13,9 @@ use alloc::vec::Vec;
 
 /// Maximum number of routes the table can hold.
 ///
-/// Increase this if needed; the current value is sufficient for a minimal
-/// operational model (§ 12).
-pub const MAX_ROUTES: usize = 256;
+/// Matches the limit specified in the draft-thain-ipv8-00 reference
+/// implementation (`IPV8_MAX_ROUTES = 1024`).
+pub const MAX_ROUTES: usize = 1024;
 
 /// A single static route entry.
 ///
@@ -95,10 +95,30 @@ impl RoutingTable {
 
     /// Look up the outgoing interface index for `asn`.
     ///
-    /// Returns `None` when no route exists for the destination ASN.
+    /// First performs an exact ASN match; if none is found it falls back to
+    /// the **default route** (ASN 0), mirroring the 0.0.0.0/0 convention
+    /// used by inet4/inet6.  Routes whose `dev_ifindex` is 0 are treated as
+    /// disabled and are never returned.
+    ///
+    /// ASN 0 is reserved as the default-route placeholder and is never a
+    /// valid destination; `lookup(0)` always returns `None`.  This prevents
+    /// a packet destined for the unspecified address from accidentally
+    /// matching the default route and looping indefinitely.
+    ///
+    /// Returns `None` when no matching (and enabled) route exists.
     pub fn lookup(&self, asn: u32) -> Option<u32> {
-        self.routes.iter()
-            .find(|r| r.asn == asn)
+        // ASN 0 is the default-route sentinel, not a routable destination.
+        if asn == 0 {
+            return None;
+        }
+        // Exact-match first; skip disabled routes (dev_ifindex == 0).
+        if let Some(r) = self.routes.iter().find(|r| r.asn == asn && r.dev_ifindex != 0) {
+            return Some(r.dev_ifindex);
+        }
+        // Fall back to the default route (ASN 0).
+        self.routes
+            .iter()
+            .find(|r| r.asn == 0 && r.dev_ifindex != 0)
             .map(|r| r.dev_ifindex)
     }
 
@@ -192,5 +212,39 @@ mod tests {
         let asns: Vec<u32> = tbl.iter().map(|r| r.asn).collect();
         assert!(asns.contains(&1));
         assert!(asns.contains(&2));
+    }
+
+    #[test]
+    fn disabled_route_not_returned() {
+        // A route with dev_ifindex == 0 is disabled and must never be returned.
+        let mut tbl = RoutingTable::new();
+        tbl.insert(Inet8Route::new(64512, 0)).unwrap();
+        assert_eq!(tbl.lookup(64512), None);
+    }
+
+    #[test]
+    fn default_route_fallback() {
+        // ASN 0 acts as the default route when no exact match exists.
+        let mut tbl = RoutingTable::new();
+        tbl.insert(Inet8Route::new(0, 9)).unwrap(); // default route via ifindex 9
+        assert_eq!(tbl.lookup(64512), Some(9)); // unknown ASN → default
+        assert_eq!(tbl.lookup(99999), Some(9));
+    }
+
+    #[test]
+    fn exact_route_preferred_over_default() {
+        let mut tbl = RoutingTable::new();
+        tbl.insert(Inet8Route::new(0, 9)).unwrap();     // default → ifindex 9
+        tbl.insert(Inet8Route::new(64512, 3)).unwrap(); // exact  → ifindex 3
+        assert_eq!(tbl.lookup(64512), Some(3)); // exact wins
+        assert_eq!(tbl.lookup(64513), Some(9)); // falls back to default
+    }
+
+    #[test]
+    fn default_route_asn_zero_lookup_returns_none() {
+        // Looking up ASN 0 directly must not match the default route.
+        let mut tbl = RoutingTable::new();
+        tbl.insert(Inet8Route::new(0, 9)).unwrap();
+        assert_eq!(tbl.lookup(0), None);
     }
 }

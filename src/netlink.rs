@@ -250,8 +250,16 @@ impl Inet8NlMsg {
 // Netlink message processor
 // ---------------------------------------------------------------------------
 
-/// Process a single Netlink message against the provided tables.
-///
+/// Map a [`crate::device::AddrError`] to a static error string.
+fn addr_error_msg(e: crate::device::AddrError) -> &'static str {
+    match e {
+        crate::device::AddrError::InvalidIfindex => "invalid interface index",
+        crate::device::AddrError::AlreadyExists  => "address already assigned to interface",
+        crate::device::AddrError::TableFull      => "address table full",
+        crate::device::AddrError::NotFound       => "address not found on interface",
+    }
+}
+
 /// Returns a `Vec` of response messages (may be empty for non-query
 /// operations that succeed).  Returns `None` when the message is malformed.
 ///
@@ -266,13 +274,13 @@ pub fn process_netlink_msg(
         Inet8NlMsg::AddAddr(info) => {
             addr_table
                 .add(info.ifindex, info.ipv8_addr())
-                .map_err(|_| "add addr failed")?;
+                .map_err(addr_error_msg)?;
             Ok(Vec::new())
         }
         Inet8NlMsg::DelAddr(info) => {
             addr_table
                 .remove(info.ifindex, info.ipv8_addr())
-                .map_err(|_| "del addr failed")?;
+                .map_err(addr_error_msg)?;
             Ok(Vec::new())
         }
         Inet8NlMsg::GetAddr => {
@@ -285,11 +293,19 @@ pub fn process_netlink_msg(
         Inet8NlMsg::AddRoute(info) => {
             route_table
                 .insert(crate::route::Inet8Route::new(info.asn, info.dev_ifindex))
-                .map_err(|_| "add route failed")?;
+                .map_err(|e| match e {
+                    crate::route::RouteError::TableFull => "route table full",
+                    crate::route::RouteError::NotFound  => "route not found",
+                })?;
             Ok(Vec::new())
         }
         Inet8NlMsg::DelRoute(info) => {
-            route_table.remove(info.asn).map_err(|_| "del route failed")?;
+            route_table
+                .remove(info.asn)
+                .map_err(|e| match e {
+                    crate::route::RouteError::NotFound  => "route not found",
+                    crate::route::RouteError::TableFull => "route table full",
+                })?;
             Ok(Vec::new())
         }
         Inet8NlMsg::GetRoute => {
@@ -437,5 +453,37 @@ mod tests {
         let mut rt = RoutingTable::new();
         let ri = RouteInfo::new(99, 1);
         assert!(process_netlink_msg(&Inet8NlMsg::DelRoute(ri), &mut at, &mut rt).is_err());
+    }
+
+    #[test]
+    fn process_add_addr_invalid_ifindex_fails() {
+        let mut at = AddrTable::new();
+        let mut rt = RoutingTable::new();
+        // ifindex == 0 is reserved and must be rejected.
+        let ai = AddrInfo::new(0, Ipv8Addr::new(1, 1));
+        let err = process_netlink_msg(&Inet8NlMsg::AddAddr(ai), &mut at, &mut rt)
+            .unwrap_err();
+        assert_eq!(err, "invalid interface index");
+    }
+
+    #[test]
+    fn process_add_addr_duplicate_fails() {
+        let mut at = AddrTable::new();
+        let mut rt = RoutingTable::new();
+        let ai = AddrInfo::new(1, Ipv8Addr::new(1, 1));
+        process_netlink_msg(&Inet8NlMsg::AddAddr(ai), &mut at, &mut rt).unwrap();
+        let err = process_netlink_msg(&Inet8NlMsg::AddAddr(ai), &mut at, &mut rt)
+            .unwrap_err();
+        assert_eq!(err, "address already assigned to interface");
+    }
+
+    #[test]
+    fn process_del_route_not_found_error_message() {
+        let mut at = AddrTable::new();
+        let mut rt = RoutingTable::new();
+        let ri = RouteInfo::new(123, 1);
+        let err = process_netlink_msg(&Inet8NlMsg::DelRoute(ri), &mut at, &mut rt)
+            .unwrap_err();
+        assert_eq!(err, "route not found");
     }
 }

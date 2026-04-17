@@ -31,6 +31,10 @@ pub mod socket;
 // Kernel module entry / exit (compiled only with --features kernel)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Protocol and address family constants
+// ---------------------------------------------------------------------------
+
 /// Address family number reserved for AF_INET8.
 /// Chosen outside the currently assigned range; adjust to the real value
 /// once it is allocated upstream.
@@ -39,6 +43,30 @@ pub const AF_INET8: u16 = 44;
 /// IP-layer protocol number used to identify IPv8 payloads inside a carrier
 /// network (analogous to IPv4 protocol field 41 for 6in4).
 pub const IPPROTO_INET8: u8 = 253;
+
+/// IPv8 version number (== 8).  Encoded in the upper nibble of `ver_ihl`.
+pub const IPV8_VERSION: u8 = crate::header::VERSION;
+
+/// Maximum transmission unit for IPv8 packets (bytes).
+pub const IPV8_MTU: u16 = 1500;
+
+/// Maximum payload size after the 28-byte IPv8 header.
+pub const IPV8_MAX_PAYLOAD: u16 = IPV8_MTU - crate::header::HEADER_LEN as u16;
+
+/// Upper-layer protocol number: ICMP (also used for ICMPv8).
+pub const PROTO_ICMP: u8 = 1;
+/// Upper-layer protocol number: TCP.
+pub const PROTO_TCP: u8 = 6;
+/// Upper-layer protocol number: UDP.
+pub const PROTO_UDP: u8 = 17;
+/// Upper-layer protocol number: OSPF8 (routing protocol for IPv8 networks).
+pub const PROTO_OSPF8: u8 = 89;
+
+/// Documentation / example ASN (65533).  Must not be used in production.
+pub const ASN_DOC: u32 = 65533;
+/// Private peering ASN (65534).  For internal use between directly connected
+/// nodes.
+pub const ASN_PRIVATE: u32 = 65534;
 
 #[cfg(feature = "kernel")]
 mod kernel_module {

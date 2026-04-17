@@ -40,6 +40,10 @@ pub enum AddrError {
     NotFound,
     /// The address is already assigned to the interface.
     AlreadyExists,
+    /// Interface index 0 is reserved and may not be used for address assignment.
+    ///
+    /// In Linux, valid `net_device` interface indices start at 1.
+    InvalidIfindex,
 }
 
 /// Table of IPv8 addresses assigned to network interfaces.
@@ -61,9 +65,13 @@ impl AddrTable {
 
     /// Assign `addr` to the interface identified by `ifindex`.
     ///
+    /// Returns `Err(AddrError::InvalidIfindex)` when `ifindex` is 0 (reserved).
     /// Returns `Err(AddrError::AlreadyExists)` if the exact (ifindex, addr)
     /// pair is already present.
     pub fn add(&mut self, ifindex: u32, addr: Ipv8Addr) -> Result<(), AddrError> {
+        if ifindex == 0 {
+            return Err(AddrError::InvalidIfindex);
+        }
         if self.entries.iter().any(|e| e.ifindex == ifindex && e.addr == addr) {
             return Err(AddrError::AlreadyExists);
         }
@@ -197,5 +205,12 @@ mod tests {
         }
         let result = tbl.add(1, Ipv8Addr::new(MAX_ADDRS as u32, 0));
         assert_eq!(result, Err(AddrError::TableFull));
+    }
+
+    #[test]
+    fn add_ifindex_zero_rejected() {
+        let mut tbl = AddrTable::new();
+        let result = tbl.add(0, Ipv8Addr::new(1, 1));
+        assert_eq!(result, Err(AddrError::InvalidIfindex));
     }
 }
