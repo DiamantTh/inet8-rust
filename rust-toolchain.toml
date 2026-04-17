@@ -1,0 +1,5 @@
+[toolchain]
+# Minimum Rust version required to build as a Linux kernel module.
+# Linux 6.11 is the minimum supported kernel (official Rust support).
+# Aligns with Debian 13 "Trixie" and the upcoming kernel 7.1 baseline.
+channel = "1.85.0"
