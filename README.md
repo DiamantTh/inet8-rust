@@ -72,7 +72,7 @@ dkms status
 |--------|-------------|-------|
 | < 6.1  | none        | Not supported |
 | 6.1 – 6.10 | experimental | Unstable ABI, not recommended |
-| **6.11 – 6.x** | official | Minimum supported version |
+| **6.11+** | official | Minimum supported version |
 | **7.0+** | stable / first-class | Recommended |
 
 ## License
