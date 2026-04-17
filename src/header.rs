@@ -218,7 +218,8 @@ impl Ipv8Header {
             return None;
         }
         let total_len   = u16::from_be_bytes([bytes[2],  bytes[3]]);
-        // payload_len may be negative if total_len < HEADER_LEN; treat as 0.
+        // Use saturating_sub to handle malformed packets where total_len < HEADER_LEN
+        // (which would underflow if computed with plain subtraction).
         let payload_len = total_len.saturating_sub(HEADER_LEN as u16);
         Some(Self {
             dscp_ecn:   bytes[1],

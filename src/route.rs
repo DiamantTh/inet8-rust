@@ -101,7 +101,9 @@ impl RoutingTable {
     /// disabled and are never returned.
     ///
     /// ASN 0 is reserved as the default-route placeholder and is never a
-    /// valid destination; `lookup(0)` always returns `None`.
+    /// valid destination; `lookup(0)` always returns `None`.  This prevents
+    /// a packet destined for the unspecified address from accidentally
+    /// matching the default route and looping indefinitely.
     ///
     /// Returns `None` when no matching (and enabled) route exists.
     pub fn lookup(&self, asn: u32) -> Option<u32> {

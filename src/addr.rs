@@ -211,7 +211,11 @@ impl fmt::Display for Ipv8Addr {
 impl core::str::FromStr for Ipv8Addr {
     type Err = ();
 
-    /// Parse from the text representation `<asn>.<a>.<b>.<c>.<d>`.
+    /// Parse from text representation.
+    ///
+    /// Accepts two formats (see [`Ipv8Addr::parse`]):
+    /// * **8-octet** (canonical): `r1.r2.r3.r4.n1.n2.n3.n4`
+    /// * **ASN dot-notation**: `<decimal_asn>.n1.n2.n3.n4`
     ///
     /// Returns `Err(())` for any malformed input.
     fn from_str(s: &str) -> Result<Self, Self::Err> {

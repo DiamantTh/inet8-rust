@@ -255,7 +255,7 @@ impl Inet8Socket {
     /// source address + payload in a `VecDeque`.
     pub fn deliver(&mut self, src: Ipv8Addr, data: Vec<u8>) {
         if self.state == SocketState::Released {
-            return; // drop: socket is closed
+            return; // drop: socket is released
         }
         if self.recv_queue.len() >= MAX_RECV_QUEUE_LEN {
             return; // drop: receive buffer full

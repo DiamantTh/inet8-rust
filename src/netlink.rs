@@ -252,6 +252,16 @@ impl Inet8NlMsg {
 
 /// Process a single Netlink message against the provided tables.
 ///
+/// Map an [`crate::device::AddrError`] to a static error string.
+fn addr_error_msg(e: crate::device::AddrError) -> &'static str {
+    match e {
+        crate::device::AddrError::InvalidIfindex => "invalid interface index",
+        crate::device::AddrError::AlreadyExists  => "address already assigned to interface",
+        crate::device::AddrError::TableFull      => "address table full",
+        crate::device::AddrError::NotFound       => "address not found on interface",
+    }
+}
+
 /// Returns a `Vec` of response messages (may be empty for non-query
 /// operations that succeed).  Returns `None` when the message is malformed.
 ///
@@ -266,23 +276,13 @@ pub fn process_netlink_msg(
         Inet8NlMsg::AddAddr(info) => {
             addr_table
                 .add(info.ifindex, info.ipv8_addr())
-                .map_err(|e| match e {
-                    crate::device::AddrError::InvalidIfindex => "invalid interface index",
-                    crate::device::AddrError::AlreadyExists  => "address already assigned to interface",
-                    crate::device::AddrError::TableFull      => "address table full",
-                    crate::device::AddrError::NotFound       => "address not found",
-                })?;
+                .map_err(addr_error_msg)?;
             Ok(Vec::new())
         }
         Inet8NlMsg::DelAddr(info) => {
             addr_table
                 .remove(info.ifindex, info.ipv8_addr())
-                .map_err(|e| match e {
-                    crate::device::AddrError::NotFound       => "address not found on interface",
-                    crate::device::AddrError::InvalidIfindex => "invalid interface index",
-                    crate::device::AddrError::AlreadyExists  => "address already assigned to interface",
-                    crate::device::AddrError::TableFull      => "address table full",
-                })?;
+                .map_err(addr_error_msg)?;
             Ok(Vec::new())
         }
         Inet8NlMsg::GetAddr => {
