@@ -1,0 +1,19 @@
+[package]
+name = "inet8"
+version = "0.1.0"
+edition = "2021"
+description = "IPv8 minimal network stack kernel module"
+license = "GPL-3.0"
+
+[lib]
+name = "inet8"
+path = "src/lib.rs"
+
+# Without `--features kernel` the crate compiles with std so that
+# `cargo check` and `cargo test` work without kernel headers.
+[features]
+default = []
+# Enable to build as a real Linux kernel module (requires kernel Rust toolchain)
+kernel = []
+
+[dependencies]
