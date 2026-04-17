@@ -22,16 +22,46 @@ use core::fmt;
 ///
 /// On the wire both fields are encoded in big-endian order.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Ipv8Addr {
     pub asn: u32,
     pub host: u32,
 }
 
 impl Ipv8Addr {
+    /// The unspecified IPv8 address `0.0.0.0.0` (all zeros).
+    ///
+    /// Analogous to `Ipv4Addr::UNSPECIFIED` / `Ipv6Addr::UNSPECIFIED`.
+    /// Must not appear as a source or destination in a routed packet.
+    pub const UNSPECIFIED: Self = Self { asn: 0, host: 0 };
+
+    /// The loopback IPv8 address `0.0.0.0.1` (ASN 0, host 1).
+    ///
+    /// Analogous to `127.0.0.1` (IPv4) / `::1` (IPv6).  Traffic to this
+    /// address stays on the local host and must not be forwarded.
+    pub const LOOPBACK: Self = Self { asn: 0, host: 1 };
+
     /// Create a new address from an ASN and a host identifier.
     pub const fn new(asn: u32, host: u32) -> Self {
         Self { asn, host }
+    }
+
+    /// Returns `true` if this is the unspecified address (`0.0.0.0.0`).
+    ///
+    /// Packets carrying an unspecified source or destination are invalid and
+    /// should be dropped.
+    #[inline]
+    pub const fn is_unspecified(self) -> bool {
+        self.asn == 0 && self.host == 0
+    }
+
+    /// Returns `true` if this is the loopback address (`0.0.0.0.1`).
+    ///
+    /// Packets destined for the loopback address must not be forwarded to
+    /// another node.
+    #[inline]
+    pub const fn is_loopback(self) -> bool {
+        self.asn == 0 && self.host == 1
     }
 
     /// Create an address from its eight individual bytes.
@@ -77,6 +107,17 @@ impl fmt::Display for Ipv8Addr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let [a, b, c, d] = self.host_octets();
         write!(f, "{}.{}.{}.{}.{}", self.asn, a, b, c, d)
+    }
+}
+
+impl core::str::FromStr for Ipv8Addr {
+    type Err = ();
+
+    /// Parse from the text representation `<asn>.<a>.<b>.<c>.<d>`.
+    ///
+    /// Returns `Err(())` for any malformed input.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s).ok_or(())
     }
 }
 
@@ -171,6 +212,51 @@ mod tests {
         let bytes = addr.to_bytes();
         let back = Ipv8Addr::from_bytes(bytes);
         assert_eq!(addr, back);
+    }
+
+    #[test]
+    fn addr_unspecified_constant() {
+        assert_eq!(Ipv8Addr::UNSPECIFIED.asn, 0);
+        assert_eq!(Ipv8Addr::UNSPECIFIED.host, 0);
+        assert!(Ipv8Addr::UNSPECIFIED.is_unspecified());
+        assert!(!Ipv8Addr::UNSPECIFIED.is_loopback());
+    }
+
+    #[test]
+    fn addr_loopback_constant() {
+        assert_eq!(Ipv8Addr::LOOPBACK.asn, 0);
+        assert_eq!(Ipv8Addr::LOOPBACK.host, 1);
+        assert!(Ipv8Addr::LOOPBACK.is_loopback());
+        assert!(!Ipv8Addr::LOOPBACK.is_unspecified());
+    }
+
+    #[test]
+    fn addr_is_unspecified_false_for_nonzero() {
+        assert!(!Ipv8Addr::new(1, 0).is_unspecified());
+        assert!(!Ipv8Addr::new(0, 1).is_unspecified());
+    }
+
+    #[test]
+    fn addr_ord() {
+        let a = Ipv8Addr::new(1, 0);
+        let b = Ipv8Addr::new(2, 0);
+        let c = Ipv8Addr::new(1, 1);
+        assert!(a < b);
+        assert!(a < c);
+        assert!(c < b);
+    }
+
+    #[test]
+    fn addr_from_str_ok() {
+        let addr: Ipv8Addr = "64512.10.0.0.1".parse().expect("parse failed");
+        assert_eq!(addr.asn, 64512);
+        assert_eq!(addr.host_octets(), [10, 0, 0, 1]);
+    }
+
+    #[test]
+    fn addr_from_str_invalid() {
+        assert!("bad".parse::<Ipv8Addr>().is_err());
+        assert!("64512.256.0.0.1".parse::<Ipv8Addr>().is_err());
     }
 
     #[test]

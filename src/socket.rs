@@ -23,9 +23,20 @@ use alloc::vec::Vec;
 use std::collections::VecDeque;
 
 use crate::addr::{Ipv8Addr, SockAddrIn8};
-use crate::header::Ipv8Header;
+use crate::header::{Ipv8Header, DEFAULT_HOP_LIMIT};
 use crate::route::RoutingTable;
 use crate::AF_INET8;
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/// Maximum number of packets that the per-socket receive queue may hold.
+///
+/// Mirrors the concept of `SO_RCVBUF` / `sk_rcvbuf` in the Linux kernel.
+/// Excess packets delivered to a full queue are silently dropped to prevent
+/// unbounded memory growth (analogous to the kernel's socket backlog limit).
+pub const MAX_RECV_QUEUE_LEN: usize = 256;
 
 // ---------------------------------------------------------------------------
 // Socket state
@@ -91,6 +102,12 @@ pub struct Inet8Socket {
     /// Simulated receive queue.  In a kernel build this is the `sk_buff` queue.
     /// Uses `VecDeque` to allow O(1) FIFO dequeue from the front.
     pub recv_queue: VecDeque<RecvEntry>,
+    /// Per-socket hop limit for outgoing packets.
+    ///
+    /// Analogous to the `IP_TTL` / `IPV6_UNICAST_HOPS` socket options in
+    /// inet4/inet6.  Defaults to [`DEFAULT_HOP_LIMIT`] and may be changed
+    /// by the application between sends.
+    pub hop_limit: u8,
 }
 
 impl Inet8Socket {
@@ -108,6 +125,7 @@ impl Inet8Socket {
             local: None,
             remote: None,
             recv_queue: VecDeque::new(),
+            hop_limit: DEFAULT_HOP_LIMIT,
         }
     }
 
@@ -203,6 +221,7 @@ impl Inet8Socket {
 
         let hdr = Ipv8Header::new(
             protocol,
+            self.hop_limit,
             payload.len() as u16,
             local.asn,
             local.addr,
@@ -227,9 +246,20 @@ impl Inet8Socket {
     /// been parsed and validated, and the correct socket has been identified
     /// by destination address.
     ///
+    /// Packets delivered to a released socket are silently dropped.
+    /// Packets that would exceed [`MAX_RECV_QUEUE_LEN`] are also silently
+    /// dropped (receive-buffer overflow), mirroring the kernel's
+    /// `SO_RCVBUF`-limited drop behaviour.
+    ///
     /// In a kernel build this enqueues an `sk_buff`; here we store the
-    /// source address + payload in a `Vec`.
+    /// source address + payload in a `VecDeque`.
     pub fn deliver(&mut self, src: Ipv8Addr, data: Vec<u8>) {
+        if self.state == SocketState::Released {
+            return; // drop: socket is closed
+        }
+        if self.recv_queue.len() >= MAX_RECV_QUEUE_LEN {
+            return; // drop: receive buffer full
+        }
         self.recv_queue.push_back(RecvEntry { src, data });
     }
 
@@ -449,7 +479,8 @@ mod tests {
 
     #[test]
     fn parse_packet_roundtrip() {
-        let hdr = Ipv8Header::new(17, 3, 1, 2, 3, 4);
+        use crate::header::DEFAULT_HOP_LIMIT;
+        let hdr = Ipv8Header::new(17, DEFAULT_HOP_LIMIT, 3, 1, 2, 3, 4);
         let mut buf = hdr.to_bytes().to_vec();
         buf.extend_from_slice(b"abc");
         let (ph, payload) = Inet8Socket::parse_packet(&buf).unwrap();
@@ -460,5 +491,49 @@ mod tests {
     #[test]
     fn parse_packet_too_short() {
         assert!(Inet8Socket::parse_packet(&[0u8; 5]).is_err());
+    }
+
+    // -- hop_limit -----------------------------------------------------------
+
+    #[test]
+    fn socket_default_hop_limit() {
+        use crate::header::DEFAULT_HOP_LIMIT;
+        let s = Inet8Socket::create();
+        assert_eq!(s.hop_limit, DEFAULT_HOP_LIMIT);
+    }
+
+    #[test]
+    fn sendmsg_hop_limit_in_packet() {
+        let mut s = Inet8Socket::create();
+        s.hop_limit = 30;
+        s.bind(make_local()).unwrap();
+        s.connect(make_remote()).unwrap();
+        let rt = make_routes();
+        let (pkt, _) = s.sendmsg(None, b"hi", 17, &rt).unwrap();
+        let (hdr, _) = Inet8Socket::parse_packet(&pkt).unwrap();
+        assert_eq!(hdr.hop_limit, 30);
+    }
+
+    // -- deliver guards ------------------------------------------------------
+
+    #[test]
+    fn deliver_to_released_socket_is_ignored() {
+        let mut s = Inet8Socket::create();
+        s.release();
+        s.deliver(Ipv8Addr::new(1, 1), b"drop me".to_vec());
+        // Queue must stay empty — the packet was dropped.
+        assert!(s.recv_queue.is_empty());
+    }
+
+    #[test]
+    fn deliver_respects_max_queue_len() {
+        let mut s = Inet8Socket::create();
+        let src = Ipv8Addr::new(1, 1);
+        for _ in 0..MAX_RECV_QUEUE_LEN {
+            s.deliver(src, b"x".to_vec());
+        }
+        // Queue is now at capacity; next deliver must be dropped.
+        s.deliver(src, b"overflow".to_vec());
+        assert_eq!(s.recv_queue.len(), MAX_RECV_QUEUE_LEN);
     }
 }
