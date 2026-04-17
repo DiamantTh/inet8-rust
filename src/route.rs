@@ -13,9 +13,9 @@ use alloc::vec::Vec;
 
 /// Maximum number of routes the table can hold.
 ///
-/// Increase this if needed; the current value is sufficient for a minimal
-/// operational model (§ 12).
-pub const MAX_ROUTES: usize = 256;
+/// Matches the limit specified in the draft-thain-ipv8-00 reference
+/// implementation (`IPV8_MAX_ROUTES = 1024`).
+pub const MAX_ROUTES: usize = 1024;
 
 /// A single static route entry.
 ///

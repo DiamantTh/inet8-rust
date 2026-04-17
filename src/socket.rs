@@ -23,7 +23,7 @@ use alloc::vec::Vec;
 use std::collections::VecDeque;
 
 use crate::addr::{Ipv8Addr, SockAddrIn8};
-use crate::header::{Ipv8Header, DEFAULT_HOP_LIMIT};
+use crate::header::{Ipv8Header, DEFAULT_TTL};
 use crate::route::RoutingTable;
 use crate::AF_INET8;
 
@@ -102,12 +102,12 @@ pub struct Inet8Socket {
     /// Simulated receive queue.  In a kernel build this is the `sk_buff` queue.
     /// Uses `VecDeque` to allow O(1) FIFO dequeue from the front.
     pub recv_queue: VecDeque<RecvEntry>,
-    /// Per-socket hop limit for outgoing packets.
+    /// Per-socket TTL for outgoing packets.
     ///
     /// Analogous to the `IP_TTL` / `IPV6_UNICAST_HOPS` socket options in
-    /// inet4/inet6.  Defaults to [`DEFAULT_HOP_LIMIT`] and may be changed
-    /// by the application between sends.
-    pub hop_limit: u8,
+    /// inet4/inet6.  Defaults to [`DEFAULT_TTL`] and may be changed by the
+    /// application between sends.
+    pub ttl: u8,
 }
 
 impl Inet8Socket {
@@ -125,7 +125,7 @@ impl Inet8Socket {
             local: None,
             remote: None,
             recv_queue: VecDeque::new(),
-            hop_limit: DEFAULT_HOP_LIMIT,
+            ttl: DEFAULT_TTL,
         }
     }
 
@@ -221,7 +221,7 @@ impl Inet8Socket {
 
         let hdr = Ipv8Header::new(
             protocol,
-            self.hop_limit,
+            self.ttl,
             payload.len() as u16,
             local.asn,
             local.addr,
@@ -479,8 +479,8 @@ mod tests {
 
     #[test]
     fn parse_packet_roundtrip() {
-        use crate::header::DEFAULT_HOP_LIMIT;
-        let hdr = Ipv8Header::new(17, DEFAULT_HOP_LIMIT, 3, 1, 2, 3, 4);
+        use crate::header::DEFAULT_TTL;
+        let hdr = Ipv8Header::new(17, DEFAULT_TTL, 3, 1, 2, 3, 4);
         let mut buf = hdr.to_bytes().to_vec();
         buf.extend_from_slice(b"abc");
         let (ph, payload) = Inet8Socket::parse_packet(&buf).unwrap();
@@ -493,25 +493,25 @@ mod tests {
         assert!(Inet8Socket::parse_packet(&[0u8; 5]).is_err());
     }
 
-    // -- hop_limit -----------------------------------------------------------
+    // -- ttl -----------------------------------------------------------------
 
     #[test]
-    fn socket_default_hop_limit() {
-        use crate::header::DEFAULT_HOP_LIMIT;
+    fn socket_default_ttl() {
+        use crate::header::DEFAULT_TTL;
         let s = Inet8Socket::create();
-        assert_eq!(s.hop_limit, DEFAULT_HOP_LIMIT);
+        assert_eq!(s.ttl, DEFAULT_TTL);
     }
 
     #[test]
-    fn sendmsg_hop_limit_in_packet() {
+    fn sendmsg_ttl_in_packet() {
         let mut s = Inet8Socket::create();
-        s.hop_limit = 30;
+        s.ttl = 30;
         s.bind(make_local()).unwrap();
         s.connect(make_remote()).unwrap();
         let rt = make_routes();
         let (pkt, _) = s.sendmsg(None, b"hi", 17, &rt).unwrap();
         let (hdr, _) = Inet8Socket::parse_packet(&pkt).unwrap();
-        assert_eq!(hdr.hop_limit, 30);
+        assert_eq!(hdr.ttl, 30);
     }
 
     // -- deliver guards ------------------------------------------------------
