@@ -256,7 +256,7 @@ impl Ipv8Header {
     /// re-transmitting a packet (analogous to IPv4 TTL / IPv6 Hop Limit).
     #[must_use]
     pub fn decrement_ttl(self) -> Option<Self> {
-        let new_ttl = self.ttl.checked_sub(1).filter(|&v| v > 0)?;
+        let new_ttl = self.ttl.checked_sub(1).filter(|&v| v != 0)?;
         Some(Self { ttl: new_ttl, ..self })
     }
 }

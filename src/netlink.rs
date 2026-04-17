@@ -250,9 +250,7 @@ impl Inet8NlMsg {
 // Netlink message processor
 // ---------------------------------------------------------------------------
 
-/// Process a single Netlink message against the provided tables.
-///
-/// Map an [`crate::device::AddrError`] to a static error string.
+/// Map a [`crate::device::AddrError`] to a static error string.
 fn addr_error_msg(e: crate::device::AddrError) -> &'static str {
     match e {
         crate::device::AddrError::InvalidIfindex => "invalid interface index",
@@ -304,7 +302,6 @@ pub fn process_netlink_msg(
         Inet8NlMsg::DelRoute(info) => {
             route_table
                 .remove(info.asn)
-                .map(|_| ())
                 .map_err(|e| match e {
                     crate::route::RouteError::NotFound  => "route not found",
                     crate::route::RouteError::TableFull => "route table full",
